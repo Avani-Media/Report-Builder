@@ -18,8 +18,8 @@ body.loading{display:grid;place-items:center;min-height:100vh}
 <div id="loading" class="loader"><div class="brand">AVANI MEDIA</div><h1>Loading Report Builder</h1><p id="loadText">Checking the current cloud build…</p><div class="bar"><span></span></div><p style="font-size:11px">Permanent builder shell</p></div>
 <main id="manager">
   <div class="top"><div><div class="brand">AVANI MEDIA</div><h1 style="margin-bottom:6px">Builder Release Manager</h1><p>Publish or roll back builder builds without replacing the GitHub shell.</p></div><a href="./">← Open builder</a></div>
-  <section class="card"><h2 style="margin-top:0;font-size:18px">Publish new builder build</h2><p>Select the new builder HTML. The next build number is assigned automatically when you publish.</p><label>Next build</label><input id="build" type="text" value="Build 1.0.0" readonly /><label>Builder HTML file</label><input id="file" type="file" accept=".html,text/html" /><label>Publishing password</label><input id="password" type="password" placeholder="Publishing password" /><div class="row" style="margin-top:14px"><button id="publish">Publish build</button><button id="refresh" class="secondary">Refresh builds</button></div><div id="status" class="status">Choose a builder HTML file. Build numbering is automatic.</div></section>
-  <section class="card"><h2 style="margin-top:0;font-size:18px">Recent builds</h2><div id="releases"><p>Enter the publishing password above, then choose Refresh builds.</p></div></section>
+  <section class="card"><h2 style="margin-top:0;font-size:18px">Publish new builder build</h2><p>Select the new builder HTML. The next build number is assigned automatically when you publish.</p><div id="managerAuth" class="status" style="margin-top:14px">Checking signed-in AVANI session…</div><label>Next build</label><input id="build" type="text" value="Build 1.0.0" readonly /><label>Builder HTML file</label><input id="file" type="file" accept=".html,text/html" /><div class="row" style="margin-top:14px"><button id="publish">Publish build</button><button id="refresh" class="secondary">Refresh builds</button></div><div id="status" class="status">Choose a builder HTML file. Build numbering is automatic.</div></section>
+  <section class="card"><h2 style="margin-top:0;font-size:18px">Recent builds</h2><div id="releases"><p>Checking your signed-in session…</p></div></section>
 </main>
 <script>
 const API='https://qrkghrvlcjonkayxzhwg.supabase.co/functions/v1/builder-release-api';
@@ -72,25 +72,45 @@ function injectManagerButton(html){
 }
 function render(html){html=injectManagerButton(html);document.open();document.write(html);document.close()}
 function showManager(){document.body.classList.remove('loading');document.getElementById('loading').style.display='none';document.getElementById('manager').style.display='block'}
+const AUTH_BASE='https://qrkghrvlcjonkayxzhwg.supabase.co';
+const AUTH_KEY='sb_publishable_9nLOMVRVhlNV9cJNQ8_fFg_X6N-vO3y';
+const AUTH_EMAIL='operations@avanimedia.com';
+const AUTH_STORAGE='avaniBuilderAuthSessionV1';
+function readManagerSession(){try{return JSON.parse(localStorage.getItem(AUTH_STORAGE)||'null')}catch(_){return null}}
+function managerToken(){const s=readManagerSession();return s&&s.access_token?s.access_token:''}
+async function validateManagerSession(){
+ const token=managerToken(), box=document.getElementById('managerAuth');
+ if(!token){if(box)box.innerHTML='Not signed in. <a href="./">Open the builder and sign in</a> first.';return false}
+ try{
+  const r=await fetch(AUTH_BASE+'/auth/v1/user',{headers:{apikey:AUTH_KEY,Authorization:'Bearer '+token},cache:'no-store'});
+  const u=await r.json().catch(()=>({}));
+  if(!r.ok||String(u.email||'').toLowerCase()!==AUTH_EMAIL){if(box)box.innerHTML='Your session has expired. <a href="./">Open the builder and sign in again</a>.';return false}
+  if(box)box.innerHTML='<strong>Signed in</strong> · '+AUTH_EMAIL+' · Admin';
+  return true
+ }catch(e){if(box)box.textContent='Unable to verify signed-in session.';return false}
+}
+function authHeaders(extra={}){const token=managerToken();return {...extra,Authorization:'Bearer '+token}}
 async function refreshNextBuild(){
- const password=document.getElementById('password').value, build=document.getElementById('build'), status=document.getElementById('status');
- if(!password){build.value='Build 1.0.0';return}
- try{const r=await fetch(API+'?action=next-build&t='+Date.now(),{headers:{'x-avani-publish-password':password},cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to get next build');build.value=String(d.build||'Build 1.0.0').replace(/^build\s+/i,'Build ')}catch(e){status.textContent='Could not determine next build: '+e.message}
+ const build=document.getElementById('build'), status=document.getElementById('status');
+ if(!(await validateManagerSession())){build.value='Build 1.0.0';return}
+ try{const r=await fetch(API+'?action=next-build&t='+Date.now(),{headers:authHeaders(),cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to get next build');build.value=String(d.build||'Build 1.0.0').replace(/^build\s+/i,'Build ')}catch(e){status.textContent='Could not determine next build: '+e.message}
 }
 async function publish(){
- const file=document.getElementById('file').files[0], password=document.getElementById('password').value, status=document.getElementById('status');
- if(!file||!password){status.textContent='Builder HTML file and publishing password are required.';return}
+ const file=document.getElementById('file').files[0], status=document.getElementById('status');
+ if(!(await validateManagerSession())){status.textContent='Sign in through the builder before publishing.';return}
+ if(!file){status.textContent='Choose a Builder HTML file first.';return}
  status.textContent='Reading '+file.name+'…';const html=await file.text();status.textContent='Publishing next build…';
- try{const r=await fetch(API+'?action=publish',{method:'POST',headers:{'Content-Type':'application/json','x-avani-publish-password':password},body:JSON.stringify({html_content:html})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Publish failed');const label=String(d.build||'Build published').replace(/^build\s+/i,'Build ');status.textContent=label+' published successfully. The normal builder URL will load it on refresh.';await listReleases();await refreshNextBuild()}catch(e){status.textContent='Publish failed: '+e.message}
+ try{const r=await fetch(API+'?action=publish',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({html_content:html})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Publish failed');const label=String(d.build||'Build published').replace(/^build\s+/i,'Build ');status.textContent=label+' published successfully. The normal builder URL will load it on refresh.';await listReleases();await refreshNextBuild()}catch(e){status.textContent='Publish failed: '+e.message}
 }
 async function listReleases(){
- const password=document.getElementById('password').value, box=document.getElementById('releases'), status=document.getElementById('status');if(!password){status.textContent='Enter the publishing password first.';return}
+ const box=document.getElementById('releases'), status=document.getElementById('status');
+ if(!(await validateManagerSession())){box.innerHTML='<p>Sign in through the builder to view releases.</p>';return}
  box.innerHTML='<p>Loading builds…</p>';
- try{const r=await fetch(API+'?action=list&t='+Date.now(),{headers:{'x-avani-publish-password':password},cache:'no-store'});const rows=await r.json();if(!r.ok)throw new Error(rows.error||'Unable to list builds');box.innerHTML=rows.length?rows.map(x=>{const label=String(x.version||'').replace(/^build\s+/i,'Build ');return `<div class="release"><div><strong>${esc(label)}</strong>${x.is_current?'<span class="pill">CURRENT</span>':''}<div style="font-size:11px;color:#7c899d;margin-top:4px">${x.published_at?new Date(x.published_at).toLocaleString():'Not published'}</div></div><span style="font-size:11px;color:#687993">${esc(x.status)}</span><button class="${x.is_current?'secondary':'danger'}" ${x.is_current?'disabled':''} data-version="${esc(x.version)}" onclick="rollback(this.dataset.version)">${x.is_current?'Current':'Roll back'}</button></div>`}).join(''):'<p>No cloud builds yet. The shell is currently using its bundled fallback.</p>';await refreshNextBuild()}catch(e){box.innerHTML='<p>Unable to load builds.</p>';status.textContent='List failed: '+e.message}
+ try{const r=await fetch(API+'?action=list&t='+Date.now(),{headers:authHeaders(),cache:'no-store'});const rows=await r.json();if(!r.ok)throw new Error(rows.error||'Unable to list builds');box.innerHTML=rows.length?rows.map(x=>{const label=String(x.version||'').replace(/^build\s+/i,'Build ');return `<div class="release"><div><strong>${esc(label)}</strong>${x.is_current?'<span class="pill">CURRENT</span>':''}<div style="font-size:11px;color:#7c899d;margin-top:4px">${x.published_at?new Date(x.published_at).toLocaleString():'Not published'}</div></div><span style="font-size:11px;color:#687993">${esc(x.status)}</span><button class="${x.is_current?'secondary':'danger'}" ${x.is_current?'disabled':''} data-version="${esc(x.version)}" onclick="rollback(this.dataset.version)">${x.is_current?'Current':'Roll back'}</button></div>`}).join(''):'<p>No cloud builds yet. The shell is currently using its bundled fallback.</p>';await refreshNextBuild()}catch(e){box.innerHTML='<p>Unable to load builds.</p>';status.textContent='List failed: '+e.message}
 }
-async function rollback(version){const password=document.getElementById('password').value,status=document.getElementById('status');if(!password)return;const label=String(version||'').replace(/^build\s+/i,'Build ');if(!confirm('Make '+label+' the current builder build?'))return;status.textContent='Rolling back to '+label+'…';try{const r=await fetch(API+'?action=rollback',{method:'POST',headers:{'Content-Type':'application/json','x-avani-publish-password':password},body:JSON.stringify({build:version})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Rollback failed');status.textContent='Current builder is now '+label+'.';await listReleases()}catch(e){status.textContent='Rollback failed: '+e.message}}
+async function rollback(version){const status=document.getElementById('status');if(!(await validateManagerSession())){status.textContent='Sign in through the builder before rolling back.';return}const label=String(version||'').replace(/^build\s+/i,'Build ');if(!confirm('Make '+label+' the current builder build?'))return;status.textContent='Rolling back to '+label+'…';try{const r=await fetch(API+'?action=rollback',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({build:version})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Rollback failed');status.textContent='Current builder is now '+label+'.';await listReleases()}catch(e){status.textContent='Rollback failed: '+e.message}}
 function esc(s){return String(s||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
-if(qs.get('manage')==='1'){document.getElementById('publish').onclick=publish;document.getElementById('refresh').onclick=listReleases;document.getElementById('password').addEventListener('change',()=>{refreshNextBuild();listReleases()});document.getElementById('file').addEventListener('change',refreshNextBuild)}
+if(qs.get('manage')==='1'){document.getElementById('publish').onclick=publish;document.getElementById('refresh').onclick=listReleases;document.getElementById('file').addEventListener('change',refreshNextBuild);setTimeout(async()=>{if(await validateManagerSession()){await refreshNextBuild();await listReleases()}},0)}
 boot();
 </script>
 </body></html>
