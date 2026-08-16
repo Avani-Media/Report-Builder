@@ -47,7 +47,7 @@ function injectManagerButton(html){
   #avaniLogoutBtn{display:inline-grid!important;place-items:center!important;width:42px!important;min-width:42px!important;height:42px!important;padding:0!important;border:1px solid rgba(255,255,255,.18)!important;background:rgba(255,255,255,.10)!important;color:#fff!important;box-shadow:0 8px 24px rgba(7,22,47,.16)!important}
   #avaniLogoutBtn:hover{transform:translateY(-1px)!important;box-shadow:0 10px 28px rgba(7,22,47,.22)!important;background:rgba(255,255,255,.16)!important}
   #avaniLogoutBtn svg{display:block;width:18px;height:18px;fill:#fff}
-  [data-avani-shell-hide-logout="1"]{display:none!important}
+  [data-avani-shell-hide-logout="1"],[data-avani-shell-hide-auth="1"]{display:none!important}
   </style>
   <script id="avani-shell-manager-script">
   (function(){
@@ -73,12 +73,31 @@ function injectManagerButton(html){
       return btn;
     }
     function hideExistingLogout(){
-      var nodes=document.querySelectorAll('button,a,[role=button]');
-      nodes.forEach(function(el){var t=(el.textContent||'').trim().toLowerCase();if(t==='log out'||t==='logout')el.setAttribute('data-avani-shell-hide-logout','1')})
+      var actionNodes=document.querySelectorAll('button,a,[role=button]');
+      actionNodes.forEach(function(el){
+        var t=(el.textContent||'').trim().toLowerCase();
+        if(t==='log out'||t==='logout')el.setAttribute('data-avani-shell-hide-logout','1');
+      });
+      var infoNodes=document.querySelectorAll('body *');
+      infoNodes.forEach(function(el){
+        if(el.id==='avaniLogoutBtn'||el.id==='avaniBuilderReleaseManagerBtn')return;
+        var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+        if(!t)return;
+        if(t.indexOf('operations@avanimedia.com')!==-1||t==='operations@avanimedia.com · Admin'||t==='operations@avanimedia.com · admin'){
+          el.setAttribute('data-avani-shell-hide-auth','1');
+        }
+      });
+    }
+    function watchAuthUi(){
+      hideExistingLogout();
+      if(window.__avaniHideAuthObserver)return;
+      var obs=new MutationObserver(function(){hideExistingLogout()});
+      obs.observe(document.documentElement,{childList:true,subtree:true});
+      window.__avaniHideAuthObserver=obs;
     }
     function mount(){
       var exportButton=document.getElementById('exportBtn');if(exportButton)exportButton.remove();
-      hideExistingLogout();
+      watchAuthUi();
       if(document.getElementById('avaniBuilderReleaseManagerBtn')||document.getElementById('avaniBuilderReleaseManagerFloat'))return;
       var host=document.querySelector('.topbar .top-actions,.topbar .top-actions,.top-actions,.topbar');
       var b=document.createElement('button');b.type='button';b.textContent='Builder Release Manager';b.onclick=openManager;
