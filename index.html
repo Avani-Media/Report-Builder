@@ -42,17 +42,47 @@ function injectManagerButton(html){
   .top-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:10px!important}
   .avani-header-actions-group{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:10px!important;margin-left:auto!important}
   .avani-header-actions-group>.btn,.avani-header-actions-group>button{margin:0!important;border-radius:10px!important;transform:none!important;white-space:nowrap!important}
-  #previewBtn,#publishLiveBtn,#avaniBuilderReleaseManagerBtn{border-radius:10px!important;margin:0!important}
+  #previewBtn,#publishLiveBtn,#avaniBuilderReleaseManagerBtn,#avaniLogoutBtn{border-radius:10px!important;margin:0!important}
   #avaniBuilderReleaseManagerFloat{position:fixed;right:18px;top:18px;z-index:2147483000;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 12px;background:#18325f;color:#fff;font:800 11px/1 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 8px 24px rgba(7,22,47,.22);cursor:pointer}
+  #avaniLogoutBtn{display:inline-grid!important;place-items:center!important;width:42px!important;min-width:42px!important;height:42px!important;padding:0!important;border:1px solid rgba(255,255,255,.18)!important;background:rgba(255,255,255,.10)!important;color:#fff!important;box-shadow:0 8px 24px rgba(7,22,47,.16)!important}
+  #avaniLogoutBtn:hover{transform:translateY(-1px)!important;box-shadow:0 10px 28px rgba(7,22,47,.22)!important;background:rgba(255,255,255,.16)!important}
+  #avaniLogoutBtn svg{display:block;width:18px;height:18px;fill:#fff}
+  [data-avani-shell-hide-logout="1"]{display:none!important}
   </style>
   <script id="avani-shell-manager-script">
   (function(){
     function openManager(){var u=new URL(window.location.href);u.searchParams.set('manage','1');window.location.href=u.toString()}
+    async function logoutSession(){
+      try{
+        var raw=localStorage.getItem('`+AUTH_STORAGE+`');
+        var session=raw?JSON.parse(raw):null;
+        var token=session&&session.access_token?session.access_token:'';
+        if(token){
+          try{await fetch('`+AUTH_BASE+`/auth/v1/logout',{method:'POST',headers:{apikey:'`+AUTH_KEY+`',Authorization:'Bearer '+token}})}catch(_){}
+        }
+      }catch(_){}
+      try{localStorage.removeItem('`+AUTH_STORAGE+`')}catch(_){}
+      try{Object.keys(localStorage).forEach(function(k){if(/supabase|auth/i.test(k)&&/avani|qrkghrvlcjonkayxzhwg/i.test(k))localStorage.removeItem(k)})}catch(_){}
+      var u=new URL(window.location.href);u.searchParams.delete('manage');window.location.href=u.toString();
+    }
+    function makeLogoutButton(){
+      var btn=document.createElement('button');
+      btn.type='button';btn.id='avaniLogoutBtn';btn.className='btn dark';btn.title='Log out';btn.setAttribute('aria-label','Log out');
+      btn.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 2a1 1 0 0 1 2 0v9a1 1 0 1 1-2 0V2Zm1 20a10 10 0 0 1-7.07-17.07 1 1 0 1 1 1.41 1.41A8 8 0 1 0 17.66 6.34a1 1 0 0 1 1.41-1.41A10 10 0 0 1 12 22Z"/></svg>';
+      btn.onclick=logoutSession;
+      return btn;
+    }
+    function hideExistingLogout(){
+      var nodes=document.querySelectorAll('button,a,[role=button]');
+      nodes.forEach(function(el){var t=(el.textContent||'').trim().toLowerCase();if(t==='log out'||t==='logout')el.setAttribute('data-avani-shell-hide-logout','1')})
+    }
     function mount(){
       var exportButton=document.getElementById('exportBtn');if(exportButton)exportButton.remove();
+      hideExistingLogout();
       if(document.getElementById('avaniBuilderReleaseManagerBtn')||document.getElementById('avaniBuilderReleaseManagerFloat'))return;
       var host=document.querySelector('.topbar .top-actions,.topbar .top-actions,.top-actions,.topbar');
       var b=document.createElement('button');b.type='button';b.textContent='Builder Release Manager';b.onclick=openManager;
+      var logoutBtn=makeLogoutButton();
       if(host){
         b.id='avaniBuilderReleaseManagerBtn';b.className='btn dark';
         var preview=document.getElementById('previewBtn'),publish=document.getElementById('publishLiveBtn');
@@ -60,6 +90,7 @@ function injectManagerButton(html){
         if(preview)group.appendChild(preview);
         if(publish)group.appendChild(publish);
         group.appendChild(b);
+        group.appendChild(logoutBtn);
         host.appendChild(group);
       }
       else{b.id='avaniBuilderReleaseManagerFloat';document.body.appendChild(b)}
